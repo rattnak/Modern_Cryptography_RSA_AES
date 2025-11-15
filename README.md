@@ -31,7 +31,7 @@ A web application demonstrating AES and RSA cryptographic techniques with a clea
 - Flask-CORS 4.0.0
 
 ## Project Structure
-
+```
 project-aes/
 ├── backend/
 │   ├── aes_crypto.py      # Custom AES implementation
@@ -44,6 +44,7 @@ project-aes/
 ├── index.html
 ├── package.json
 └── vite.config.js
+```
 
 ## Installation
 
@@ -101,24 +102,30 @@ Application runs on http://localhost:5173
 
 ### Encrypt
 POST /api/encrypt
+
 Content-Type: application/json
 
+```
 {
   "plaintext": "text to encrypt",
   "key": "encryption key",
   "keySize": 128
 }
+```
 
 ### Decrypt
 POST /api/decrypt
+
 Content-Type: application/json
 
+
+```
 {
   "ciphertext": "hex string",
   "key": "encryption key",
   "keySize": 128
 }
-
+```
 ### Health Check
 GET /api/health
 
@@ -143,12 +150,14 @@ This is an educational implementation. For production use:
 ## Development
 
 ### Build for Production
-
+```
 npm run build
-
+```
 ### Preview Production Build
 
+```
 npm run preview
+```
 
 ## License
 
