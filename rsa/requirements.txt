@@ -1,0 +1,8 @@
+# RSA Cryptosystem - Flask API Requirements
+# Web Framework
+Flask==3.0.0
+flask-cors==4.0.0
+
+# Testing (optional, for running tests)
+pytest==7.4.3
+pytest-flask==1.3.0
