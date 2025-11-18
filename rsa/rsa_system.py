@@ -1,441 +1,425 @@
-import random
+
+"""
+rsa_system.py
+
+Core RSA implementation used by the Flask API, unit tests, and (indirectly)
+the React frontend.
+
+Features:
+- Number theory utilities (gcd, extended gcd, modular inverse)
+- Probabilistic prime generation (Miller–Rabin)
+- RSA keypair generation (with p, q, phi, e, d)
+- Raw RSA encrypt / decrypt / sign / verify on integers
+- Byte/hex helpers and RSA operations on bytes (for web text/hex modes)
+- SHA-256 based signing/verification for messages (educational only)
+- Fingerprint helper (SHA-1 of modulus)
+
+NOTE: This is *raw* RSA (no padding like OAEP or PSS). It is suitable only
+for teaching and demonstration, not for production cryptography.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import secrets
+from dataclasses import dataclass
 from typing import Tuple, Optional
 
 
-class MathUtils:
-    # Mathematical utility functions for RSA implementation.
+# ============================================================
+# Math utilities
+# ============================================================
 
-    
+class MathUtils:
     @staticmethod
     def gcd(a: int, b: int) -> int:
-        """
-        Compute the Greatest Common Divisor using Euclidean algorithm.
-        
-        Args:
-            a: First integer
-            b: Second integer
-        
-        Returns:
-            GCD of a and b
-            
-        Example:
-            >>> MathUtils.gcd(48, 18)
-            6
-        """
+        """Compute greatest common divisor using Euclid's algorithm."""
         while b != 0:
             a, b = b, a % b
-        return a
-    
+        return abs(a)
+
     @staticmethod
     def extended_gcd(a: int, b: int) -> Tuple[int, int, int]:
         """
-        Extended Euclidean Algorithm.
-        Returns gcd(a,b) and coefficients x, y such that ax + by = gcd(a,b)
-        
-        This is crucial for finding the modular inverse in RSA.
-        
-        Args:
-            a: First integer
-            b: Second integer
-        
-        Returns:
-            Tuple (gcd, x, y) where ax + by = gcd
-            
-        Example:
-            >>> g, x, y = MathUtils.extended_gcd(17, 3120)
-            >>> g
-            1
+        Extended Euclidean algorithm.
+        Returns (g, x, y) such that a*x + b*y = g = gcd(a, b).
         """
         if b == 0:
-            return a, 1, 0
-        else:
-            gcd_val, x1, y1 = MathUtils.extended_gcd(b, a % b)
-            x = y1
-            y = x1 - (a // b) * y1
-            return gcd_val, x, y
-    
-    @staticmethod
-    def mod_inverse(e: int, phi: int) -> int:
-        """
-        Compute the modular multiplicative inverse of e modulo phi.
-        This finds d such that (e * d) ≡ 1 (mod phi)
-        
-        Args:
-            e: The public exponent
-            phi: Euler's totient function φ(n)
-        
-        Returns:
-            d: The private exponent (modular inverse of e)
-            
-        Raises:
-            ValueError: If modular inverse does not exist
-            
-        Example:
-            >>> MathUtils.mod_inverse(17, 3120)
-            2753
-        """
-        gcd_val, x, y = MathUtils.extended_gcd(e, phi)
-        
-        if gcd_val != 1:
-            raise ValueError("Modular inverse does not exist")
-        
-        return x % phi
+            return (a, 1, 0)
+        g, x1, y1 = MathUtils.extended_gcd(b, a % b)
+        return g, y1, x1 - (a // b) * y1
 
+    @staticmethod
+    def mod_inverse(a: int, m: int) -> int:
+        """
+        Compute modular inverse of a modulo m.
+        Raises ValueError if gcd(a, m) != 1 (inverse does not exist).
+        """
+        g, x, _ = MathUtils.extended_gcd(a, m)
+        if g != 1:
+            raise ValueError("No modular inverse exists for given a mod m")
+        return x % m
+
+
+# ============================================================
+# Prime generation
+# ============================================================
 
 class PrimeGenerator:
-    # Prime number generation and testing utilities.
+    """
+    Prime generation and primality testing.
+
+    Uses a small-prime trial division shortcut followed by a
+    Miller–Rabin probabilistic test. Good enough for educational
+    RSA key sizes used in this project (256–2048 bits).
+    """
+
+    _SMALL_PRIMES = [
+        2, 3, 5, 7, 11, 13, 17, 19,
+        23, 29, 31, 37, 41, 43, 47,
+        53, 59, 61
+    ]
+
     @staticmethod
-    def is_prime(n: int, k: int = 5) -> bool:
-        """
-        Miller-Rabin primality test.
-        Tests whether n is probably prime with k rounds of testing.
-        
-        The textbook discusses the importance of using probabilistic 
-        primality tests for large numbers as deterministic tests are too slow.
-        
-        Args:
-            n: Number to test for primality
-            k: Number of rounds (higher = more accurate)
-        
-        Returns:
-            True if n is probably prime, False if composite
-            
-        Example:
-            >>> PrimeGenerator.is_prime(61)
-            True
-            >>> PrimeGenerator.is_prime(100)
-            False
-        """
+    def is_prime(n: int, rounds: int = 16) -> bool:
+        """Return True if n is probably prime, False otherwise."""
         if n < 2:
             return False
-        if n == 2 or n == 3:
-            return True
-        if n % 2 == 0:
-            return False
-        
+
+        # Quick check for small primes and even numbers
+        for p in PrimeGenerator._SMALL_PRIMES:
+            if n == p:
+                return True
+            if n % p == 0:
+                return n == p
+
         # Write n-1 as 2^r * d
-        r, d = 0, n - 1
+        d = n - 1
+        r = 0
         while d % 2 == 0:
             r += 1
             d //= 2
-        
-        # Witness loop
-        for _ in range(k):
-            a = random.randrange(2, n - 1)
+
+        # Miller–Rabin tests
+        for _ in range(rounds):
+            a = secrets.randbelow(n - 3) + 2  # in [2, n-2]
             x = pow(a, d, n)
-            
             if x == 1 or x == n - 1:
                 continue
-            
-            for _ in range(r - 1):
+            for __ in range(r - 1):
                 x = pow(x, 2, n)
                 if x == n - 1:
                     break
             else:
                 return False
-        
         return True
-    
+
     @staticmethod
     def generate_prime(bits: int) -> int:
         """
-        Generate a random prime number with specified bit length.
-        
-        For security, the textbook recommends large primes.
-        Common sizes are 1024, 2048, or 4096 bits for n.
-        
-        Args:
-            bits: Bit length of the prime
-        
-        Returns:
-            A prime number with the specified bit length
-            
-        Example:
-            >>> p = PrimeGenerator.generate_prime(16)
-            >>> PrimeGenerator.is_prime(p)
-            True
+        Generate a random prime with the given bit length.
+
+        Ensures:
+        - prime.bit_length() == bits
+        - prime is odd (except the trivial 2, which we don't use here)
         """
+        if bits < 2:
+            raise ValueError("Bit length must be at least 2")
+
         while True:
-            num = random.getrandbits(bits)
-            num |= (1 << bits - 1) | 1
-            
-            if PrimeGenerator.is_prime(num):
-                return num
+            # Set MSB and LSB to ensure correct bit length and oddness
+            candidate = secrets.randbits(bits) | (1 << (bits - 1)) | 1
+            if PrimeGenerator.is_prime(candidate):
+                return candidate
 
 
+# ============================================================
+# Text <-> integer conversion (for tests)
+# ============================================================
+
+class TextConverter:
+    """
+    Convert between arbitrary UTF-8 text and big integers.
+    Used in unit tests, and also available to callers that want
+    to work directly in the "text -> int -> RSA -> int -> text" style.
+    """
+
+    @staticmethod
+    def text_to_int(text: str) -> int:
+        if text == "":
+            return 0
+        data = text.encode("utf-8")
+        return int.from_bytes(data, byteorder="big", signed=False)
+
+    @staticmethod
+    def int_to_text(value: int) -> str:
+        if value == 0:
+            return ""
+        if value < 0:
+            raise ValueError("Cannot convert negative integers to text")
+        length = (value.bit_length() + 7) // 8
+        data = value.to_bytes(length, byteorder="big", signed=False)
+        return data.decode("utf-8")
+
+
+# ============================================================
+# RSA core structures / helpers
+# ============================================================
+
+@dataclass
 class RSAKeyPair:
     """
-    Represents an RSA key pair (public and private keys).
-  
-    """
-    
-    def __init__(self, e: int, d: int, n: int, p: Optional[int] = None, q: Optional[int] = None):
-        """
-        Initialize RSA key pair.
-        
-        Args:
-            e: Public exponent
-            d: Private exponent
-            n: Modulus
-            p: First prime (optional, for optimization)
-            q: Second prime (optional, for optimization)
-        """
-        self.e = e  # Public exponent
-        self.d = d  # Private exponent
-        self.n = n  # Modulus
-        self.p = p  # First prime (kept for CRT optimization)
-        self.q = q  # Second prime (kept for CRT optimization)
-    
-    def get_public_key(self) -> Tuple[int, int]:
-        """Return public key as tuple (e, n)."""
-        return (self.e, self.n)
-    
-    def get_private_key(self) -> Tuple[int, int]:
-        """Return private key as tuple (d, n)."""
-        return (self.d, self.n)
-    
-    def __str__(self) -> str:
-        """String representation of key pair."""
-        return f"RSA Key Pair:\n  Public: (e={self.e}, n={self.n})\n  Private: (d={self.d}, n={self.n})"
+    RSA keypair container.
 
+    e: public exponent
+    d: private exponent
+    n: modulus
+    p, q: prime factors of n (optional but present for generated keys)
+    """
+    e: int
+    d: int
+    n: int
+    p: Optional[int] = None
+    q: Optional[int] = None
+
+    def get_public_key(self) -> Tuple[int, int]:
+        """Return (e, n) tuple."""
+        return self.e, self.n
+
+    def get_private_key(self) -> Tuple[int, int]:
+        """Return (d, n) tuple."""
+        return self.d, self.n
+
+
+# ---- byte/hex helpers (for Flask API & React UI) ----
+
+def bytes_to_int(b: bytes) -> int:
+    return int.from_bytes(b, "big", signed=False)
+
+
+def int_to_bytes(x: int) -> bytes:
+    if x == 0:
+        return b"\x00"
+    length = (x.bit_length() + 7) // 8
+    return x.to_bytes(length, "big", signed=False)
+
+
+def text_to_bytes(text: str) -> bytes:
+    return text.encode("utf-8")
+
+
+def bytes_to_text(data: bytes) -> str:
+    return data.decode("utf-8")
+
+
+def hex_to_bytes(h: str) -> bytes:
+    h = h.strip().lower()
+    if h.startswith("0x"):
+        h = h[2:]
+    if h == "":
+        return b""
+    if len(h) % 2 == 1:
+        h = "0" + h
+    return bytes.fromhex(h)
+
+
+def bytes_to_hex(b: bytes) -> str:
+    return b.hex()
+
+
+def fingerprint_from_modulus(n: int, length: int = 12) -> str:
+    """
+    Compute a short fingerprint of the modulus n for display purposes.
+    Uses SHA-1 over the decimal string of n and returns first `length`
+    hex characters in uppercase.
+    """
+    h = hashlib.sha1(str(n).encode("utf-8")).hexdigest()
+    return h[:length].upper()
+
+
+# ============================================================
+# RSA operations
+# ============================================================
 
 class RSA:
-    # Main RSA implementation class.
-    
-    # Implements the RSA cryptosystem following the algorithm from our textbook (Understanding Cryptography).
-    
+    """
+    Educational RSA implementation.
+
+    - Raw RSA on integers (no padding)
+    - Utilities for generating keypairs
+    - Extra helpers for byte-level operations & CRT decrypt
+    """
+
+    # ---------- key generation ----------
+
     @staticmethod
-    def generate_keypair(bits: int = 1024, verbose: bool = False) -> RSAKeyPair:
+    def generate_keypair(bits: int = 2048, e: int = 65537) -> RSAKeyPair:
         """
-        Generate RSA public and private key pair.
-        
-        Algorithm from "Understanding Cryptography":
-        1. Choose two large primes p and q
-        2. Compute n = p * q
-        3. Compute φ(n) = (p-1)(q-1)
-        4. Choose e such that 1 < e < φ(n) and gcd(e, φ(n)) = 1
-        5. Compute d such that d*e ≡ 1 (mod φ(n))
-        
-        Args:
-            bits: Bit length for the modulus n
-            verbose: Print generation steps if True
-        
-        Returns:
-            RSAKeyPair object containing public and private keys
-            
-        Example:
-            >>> rsa = RSA()
-            >>> keypair = rsa.generate_keypair(bits=256)
-            >>> isinstance(keypair, RSAKeyPair)
-            True
+        Generate an RSA keypair.
+
+        bits: modulus bit length (e.g., 256, 512, 1024, 2048)
+        e: public exponent (must be odd and > 1, typically 65537)
         """
-        if verbose:
-            print(f"Generating RSA keys with {bits}-bit modulus...")
-        
-        # Step 1: Generate two distinct primes p and q
-        if verbose:
-            print("Step 1: Generating primes p and q...")
-        p = PrimeGenerator.generate_prime(bits // 2)
-        q = PrimeGenerator.generate_prime(bits // 2)
-        
-        while p == q:
-            q = PrimeGenerator.generate_prime(bits // 2)
-        
-        # Step 2: Compute n = p * q
+        if e <= 1 or e % 2 == 0:
+            raise ValueError("Public exponent e must be an odd integer > 1")
+
+        # Generate primes of roughly half the bit length each
+        half_bits = bits // 2
+        p = PrimeGenerator.generate_prime(half_bits)
+        q = PrimeGenerator.generate_prime(half_bits)
+        while q == p:
+            q = PrimeGenerator.generate_prime(half_bits)
+
         n = p * q
-        if verbose:
-            print(f"Step 2: n = p × q = {n}")
-        
-        # Step 3: Compute Euler's totient φ(n) = (p-1)(q-1)
         phi = (p - 1) * (q - 1)
-        if verbose:
-            print(f"Step 3: φ(n) = {phi}")
-        
-        # Step 4: Choose e (public exponent)
-        # 65537 is preferred for security reasons
-        e = 65537
-        
+
+        # Ensure gcd(e, phi) == 1
         if MathUtils.gcd(e, phi) != 1:
-            e = 3
-            while MathUtils.gcd(e, phi) != 1:
-                e += 2
-        
-        if verbose:
-            print(f"Step 4: e = {e}")
-        
-        # Step 5: Compute d (private exponent)
+            # Extremely rare for chosen e=65537, but handle robustly
+            return RSA.generate_keypair(bits=bits, e=e)
+
         d = MathUtils.mod_inverse(e, phi)
-        if verbose:
-            print(f"Step 5: d = {d}")
-            print("Key generation complete!")
-        
-        return RSAKeyPair(e, d, n, p, q)
-    
+
+        return RSAKeyPair(e=e, d=d, n=n, p=p, q=q)
+
+    # ---------- basic integer RSA (used by tests) ----------
+
     @staticmethod
     def encrypt(message: int, public_key: Tuple[int, int]) -> int:
         """
-        Encrypt a message using RSA public key.
-        
-        Encryption: c = m^e mod n
-        
-        Args:
-            message: Integer message (must be < n)
-            public_key: Tuple (e, n)
-        
-        Returns:
-            Encrypted ciphertext as integer
-            
-        Raises:
-            ValueError: If message >= n
-            
-        Example:
-            >>> keypair = RSA.generate_keypair(bits=256)
-            >>> public_key = keypair.get_public_key()
-            >>> ciphertext = RSA.encrypt(42, public_key)
-            >>> isinstance(ciphertext, int)
-            True
+        Raw RSA encryption on integers.
+        message must satisfy 0 <= message < n.
         """
         e, n = public_key
-        
-        if message >= n:
-            raise ValueError("Message too large for key size")
-        
+        if not (0 <= message < n):
+            raise ValueError("Message integer must satisfy 0 <= m < n")
         return pow(message, e, n)
-    
+
     @staticmethod
     def decrypt(ciphertext: int, private_key: Tuple[int, int]) -> int:
         """
-        Decrypt a ciphertext using RSA private key.
-        
-        Decryption: m = c^d mod n
-        
-        Args:
-            ciphertext: Integer ciphertext
-            private_key: Tuple (d, n)
-        
-        Returns:
-            Decrypted message as integer
-            
-        Example:
-            >>> keypair = RSA.generate_keypair(bits=256)
-            >>> public_key = keypair.get_public_key()
-            >>> private_key = keypair.get_private_key()
-            >>> message = 42
-            >>> ciphertext = RSA.encrypt(message, public_key)
-            >>> decrypted = RSA.decrypt(ciphertext, private_key)
-            >>> message == decrypted
-            True
+        Raw RSA decryption on integers.
+        ciphertext must satisfy 0 <= ciphertext < n.
         """
         d, n = private_key
+        if not (0 <= ciphertext < n):
+            raise ValueError("Ciphertext integer must satisfy 0 <= c < n")
         return pow(ciphertext, d, n)
-    
+
     @staticmethod
     def sign(message_hash: int, private_key: Tuple[int, int]) -> int:
         """
-        Sign a message hash using private key.
-        
-        Signing: s = h(m)^d mod n
-        
-        Args:
-            message_hash: Hash of the message to sign
-            private_key: Tuple (d, n)
-        
-        Returns:
-            Digital signature
+        Raw RSA signing of an already-computed integer hash:
+
+            signature = hash^d mod n
+
+        This is the behavior expected by the existing unit tests.
         """
-        return RSA.decrypt(message_hash, private_key)
-    
+        d, n = private_key
+        if not (0 <= message_hash < n):
+            # For tests this should never happen; enforce for completeness
+            raise ValueError("Hash integer must satisfy 0 <= h < n")
+        return pow(message_hash, d, n)
+
     @staticmethod
     def verify(signature: int, public_key: Tuple[int, int]) -> int:
         """
-        Verify a signature using public key.
-        
-        Verification: h(m) = s^e mod n
-        
-        Args:
-            signature: Digital signature
-            public_key: Tuple (e, n)
-        
-        Returns:
-            Recovered message hash
+        Raw RSA verification:
+
+            recovered_hash = signature^e mod n
+
+        Caller must compare recovered_hash to their expected hash.
         """
-        return RSA.encrypt(signature, public_key)
+        e, n = public_key
+        if not (0 <= signature < n):
+            raise ValueError("Signature integer must satisfy 0 <= s < n")
+        return pow(signature, e, n)
 
+    # ---------- CRT decrypt on integers ----------
 
-class TextConverter:
-    # Utility class for converting between text and integers.
-
-    
     @staticmethod
-    def text_to_int(text: str) -> int:
+    def decrypt_crt(ciphertext: int, keypair: RSAKeyPair) -> int:
         """
-        Convert text string to integer for RSA encryption.
-        
-        Args:
-            text: String message
-        
-        Returns:
-            Integer representation
+        CRT-optimized decrypt using p, q, d from the keypair.
+        Falls back to standard decrypt if p or q missing.
         """
-        return int.from_bytes(text.encode('utf-8'), byteorder='big')
-    
+        if keypair.p is None or keypair.q is None:
+            # No CRT data – fall back
+            return RSA.decrypt(ciphertext, keypair.get_private_key())
+
+        p = keypair.p
+        q = keypair.q
+        d = keypair.d
+        n = keypair.n
+
+        if not (0 <= ciphertext < n):
+            raise ValueError("Ciphertext integer must satisfy 0 <= c < n")
+
+        dp = d % (p - 1)
+        dq = d % (q - 1)
+        q_inv = MathUtils.mod_inverse(q, p)
+
+        m1 = pow(ciphertext, dp, p)
+        m2 = pow(ciphertext, dq, q)
+        h = (q_inv * (m1 - m2)) % p
+        m = (m2 + h * q) % n
+        return m
+
+    # ---------- byte-level RSA helpers (for API) ----------
+
     @staticmethod
-    def int_to_text(number: int) -> str:
-        """
-        Convert integer back to text string after RSA decryption.
-        
-        Args:
-            number: Integer representation
-        
-        Returns:
-            Original text string
-        """
-        num_bytes = (number.bit_length() + 7) // 8
-        return number.to_bytes(num_bytes, byteorder='big').decode('utf-8')
+    def encrypt_bytes(message_bytes: bytes,
+                      public_key: Tuple[int, int]) -> bytes:
+        """Encrypt raw bytes with RSA (no padding)."""
+        m_int = bytes_to_int(message_bytes)
+        c_int = RSA.encrypt(m_int, public_key)
+        return int_to_bytes(c_int)
 
+    @staticmethod
+    def decrypt_bytes(ciphertext_bytes: bytes,
+                      private_key: Tuple[int, int]) -> bytes:
+        """Decrypt raw bytes with RSA (no padding)."""
+        c_int = bytes_to_int(ciphertext_bytes)
+        m_int = RSA.decrypt(c_int, private_key)
+        return int_to_bytes(m_int)
 
-# Example usage
-if __name__ == "__main__":
-    print("=" * 70)
-    print("RSA Cryptosystem Implementation")
-    print("CSCI 663 - Introduction to Cryptography")
-    print("=" * 70)
-    print()
-    
-    # Generate keys
-    print("Generating RSA key pair (512-bit for demo)...")
-    keypair = RSA.generate_keypair(bits=512, verbose=True)
-    
-    public_key = keypair.get_public_key()
-    private_key = keypair.get_private_key()
-    
-    print("\n" + "=" * 70)
-    print("Testing Encryption and Decryption")
-    print("=" * 70)
-    
-    # Test numeric message
-    message = 42
-    print(f"\nOriginal message: {message}")
-    
-    ciphertext = RSA.encrypt(message, public_key)
-    print(f"Encrypted: {ciphertext}")
-    
-    decrypted = RSA.decrypt(ciphertext, private_key)
-    print(f"Decrypted: {decrypted}")
-    print(f"Success: {message == decrypted}")
-    
-    # Test text message
-    print("\n" + "=" * 70)
-    print("Testing with Text Message")
-    print("=" * 70)
-    
-    text = "HELLO"
-    print(f"\nOriginal text: {text}")
-    
-    message_int = TextConverter.text_to_int(text)
-    ciphertext = RSA.encrypt(message_int, public_key)
-    decrypted_int = RSA.decrypt(ciphertext, private_key)
-    decrypted_text = TextConverter.int_to_text(decrypted_int)
-    
-    print(f"Decrypted text: {decrypted_text}")
-    print(f"Success: {text == decrypted_text}")
+    @staticmethod
+    def decrypt_bytes_crt(ciphertext_bytes: bytes,
+                          keypair: RSAKeyPair) -> bytes:
+        """CRT-optimized decrypt on bytes, when p and q are available."""
+        c_int = bytes_to_int(ciphertext_bytes)
+        m_int = RSA.decrypt_crt(c_int, keypair)
+        return int_to_bytes(m_int)
+
+    # ---------- SHA-256-based signing on bytes (for messages) ----------
+
+    @staticmethod
+    def sign_bytes(message_bytes: bytes,
+                   private_key: Tuple[int, int]) -> bytes:
+        """
+        Sign SHA-256(message_bytes) with RSA private key.
+        Educational only (no PKCS#1 v1.5 or PSS padding).
+        """
+        d, n = private_key
+        h = hashlib.sha256(message_bytes).digest()
+        h_int = bytes_to_int(h)
+        if h_int >= n:
+            # For realistic key sizes this won't happen, but keep the check
+            raise ValueError("Modulus n is too small for SHA-256 hash integer.")
+        s_int = pow(h_int, d, n)
+        return int_to_bytes(s_int)
+
+    @staticmethod
+    def verify_bytes(message_bytes: bytes,
+                     signature_bytes: bytes,
+                     public_key: Tuple[int, int]) -> bool:
+        """
+        Verify SHA-256(message_bytes) against a raw-RSA signature.
+        True if valid, False otherwise.
+        """
+        e, n = public_key
+        h = hashlib.sha256(message_bytes).digest()
+        h_int = bytes_to_int(h)
+        s_int = bytes_to_int(signature_bytes)
+        v_int = pow(s_int, e, n)
+        return v_int == h_int
