@@ -365,33 +365,75 @@ class RSA:
 class TextConverter:
     # Utility class for converting between text and integers.
 
-    
+
     @staticmethod
     def text_to_int(text: str) -> int:
         """
         Convert text string to integer for RSA encryption.
-        
+
         Args:
             text: String message
-        
+
         Returns:
             Integer representation
         """
         return int.from_bytes(text.encode('utf-8'), byteorder='big')
-    
+
     @staticmethod
     def int_to_text(number: int) -> str:
         """
         Convert integer back to text string after RSA decryption.
-        
+
         Args:
             number: Integer representation
-        
+
         Returns:
             Original text string
         """
         num_bytes = (number.bit_length() + 7) // 8
         return number.to_bytes(num_bytes, byteorder='big').decode('utf-8')
+
+    @staticmethod
+    def parse_int_or_hex(s: str) -> int:
+        """
+        Parse a string as either decimal or hexadecimal integer.
+
+        This helper provides flexible input parsing for RSA parameters,
+        allowing users to provide keys/ciphertexts in multiple formats.
+
+        Args:
+            s: String containing a number in decimal or hex format
+               Hex format can be with or without '0x' prefix
+
+        Returns:
+            Integer value
+
+        Raises:
+            ValueError: If string cannot be parsed as integer
+
+        Example:
+            >>> TextConverter.parse_int_or_hex("12345")
+            12345
+            >>> TextConverter.parse_int_or_hex("0x3039")
+            12345
+            >>> TextConverter.parse_int_or_hex("3039")  # hex without prefix
+            12345
+        """
+        s = s.strip()
+
+        # Check for explicit hex prefix
+        if s.lower().startswith("0x"):
+            return int(s, 16)
+
+        # Try decimal first
+        try:
+            return int(s, 10)
+        except ValueError:
+            # If decimal fails, try hex without prefix
+            try:
+                return int(s, 16)
+            except ValueError:
+                raise ValueError(f"Cannot parse '{s}' as decimal or hexadecimal integer")
 
 
 # Example usage

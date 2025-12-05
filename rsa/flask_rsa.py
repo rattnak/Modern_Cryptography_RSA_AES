@@ -154,13 +154,17 @@ def api_encrypt():
 def api_decrypt():
     """
     Decrypt a ciphertext using simplified API.
-    
+
+    Supports flexible input formats:
+    - Decimal integer strings: "12345678..."
+    - Hexadecimal strings: "0xabcdef..." or "abcdef..."
+
     Request JSON:
     {
-        "ciphertext": "12345...",
+        "ciphertext": "12345...",  # decimal or hex format
         "session_id": "unique_id"
     }
-    
+
     Response JSON:
     {
         "success": true,
@@ -169,34 +173,51 @@ def api_decrypt():
     }
     """
     try:
+        from rsa_system import TextConverter
+
         data = request.get_json()
         ciphertext = data.get('ciphertext', '')
         session_id = data.get('session_id', 'default')
-        
+
         if not ciphertext:
             return jsonify({
                 'success': False,
                 'error': 'Ciphertext cannot be empty'
             }), 400
-        
+
         # Get keypair
         if session_id not in keypairs:
             return jsonify({
                 'success': False,
                 'error': 'No keys found. Please generate keys first.'
             }), 400
-        
+
         keys = keypairs[session_id]
-        
+
+        # Try flexible parsing for ciphertext (decimal or hex)
+        # The decrypt function in rsa.py expects string ciphertext,
+        # but we can pre-process to handle hex format
+        try:
+            # Check if it looks like hex (contains a-f or 0x prefix)
+            if '0x' in ciphertext.lower() or any(c in ciphertext.lower() for c in 'abcdef'):
+                # Parse as hex and convert back to decimal string for decrypt function
+                parsed_int = TextConverter.parse_int_or_hex(ciphertext)
+                ciphertext_for_decrypt = str(parsed_int)
+            else:
+                ciphertext_for_decrypt = ciphertext
+        except ValueError:
+            # If parsing fails, use original ciphertext
+            ciphertext_for_decrypt = ciphertext
+
         # Decrypt using simplified API: decrypt(ciphertext, key, size)
-        plaintext = decrypt(ciphertext, keys['private_key'], keys['size'])
-        
+        plaintext = decrypt(ciphertext_for_decrypt, keys['private_key'], keys['size'])
+
         return jsonify({
             'success': True,
             'plaintext': plaintext,
             'original_ciphertext': ciphertext
         })
-        
+
     except Exception as e:
         return jsonify({
             'success': False,
@@ -445,11 +466,125 @@ def api_get_keys():
         }), 500
 
 
+@app.route('/api/import-keys', methods=['POST'])
+def api_import_keys():
+    """
+    Import/upload existing RSA keypair for a session.
+
+    This allows users to use their own pre-generated keys or keys
+    from external sources, making the system more flexible for
+    educational demonstrations and testing.
+
+    Request JSON:
+    {
+        "session_id": "unique_id",
+        "public_key": {
+            "n": "123456...",  # decimal or hex string
+            "e": "65537"       # decimal or hex string
+        },
+        "private_key": {
+            "n": "123456...",  # decimal or hex string
+            "d": "987654..."   # decimal or hex string
+        },
+        "size": 512  # optional, bit size
+    }
+
+    Note: At least one of public_key or private_key must be provided.
+          If both provided, modulus 'n' must match.
+
+    Response JSON:
+    {
+        "success": true,
+        "message": "Keys imported successfully",
+        "public_key": {...},
+        "private_key": {...}
+    }
+    """
+    try:
+        from rsa_system import TextConverter
+
+        data = request.get_json()
+        session_id = data.get('session_id', 'default')
+        public_data = data.get('public_key')
+        private_data = data.get('private_key')
+        size = data.get('size', 1024)  # default size
+
+        if not public_data and not private_data:
+            return jsonify({
+                'success': False,
+                'error': 'At least one of public_key or private_key must be provided'
+            }), 400
+
+        # Build keypair structure
+        imported_keys = {'size': size}
+
+        # Parse public key
+        if public_data:
+            try:
+                n_pub = TextConverter.parse_int_or_hex(str(public_data['n']))
+                e_pub = TextConverter.parse_int_or_hex(str(public_data['e']))
+                imported_keys['public_key'] = {'n': n_pub, 'e': e_pub}
+            except (KeyError, ValueError) as e:
+                return jsonify({
+                    'success': False,
+                    'error': f'Invalid public_key format: {str(e)}'
+                }), 400
+
+        # Parse private key
+        if private_data:
+            try:
+                n_priv = TextConverter.parse_int_or_hex(str(private_data['n']))
+                d_priv = TextConverter.parse_int_or_hex(str(private_data['d']))
+                imported_keys['private_key'] = {'n': n_priv, 'd': d_priv}
+            except (KeyError, ValueError) as e:
+                return jsonify({
+                    'success': False,
+                    'error': f'Invalid private_key format: {str(e)}'
+                }), 400
+
+        # Validate that n matches if both keys provided
+        if 'public_key' in imported_keys and 'private_key' in imported_keys:
+            if imported_keys['public_key']['n'] != imported_keys['private_key']['n']:
+                return jsonify({
+                    'success': False,
+                    'error': 'Public and private key modulus (n) do not match'
+                }), 400
+
+        # Store the imported keys
+        keypairs[session_id] = imported_keys
+
+        # Prepare response
+        response = {
+            'success': True,
+            'message': 'Keys imported successfully'
+        }
+
+        if 'public_key' in imported_keys:
+            response['public_key'] = {
+                'e': imported_keys['public_key']['e'],
+                'n': str(imported_keys['public_key']['n'])
+            }
+
+        if 'private_key' in imported_keys:
+            response['private_key'] = {
+                'd': str(imported_keys['private_key']['d']),
+                'n': str(imported_keys['private_key']['n'])
+            }
+
+        return jsonify(response)
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error importing keys: {str(e)}'
+        }), 500
+
+
 @app.route('/api/example', methods=['GET'])
 def api_example():
     """
     Show example of how to use the simplified API.
-    
+
     Returns example code snippets.
     """
     example = {
@@ -474,6 +609,10 @@ def api_example():
             {
                 'operation': 'Verify',
                 'code': 'is_valid = verify(message, sig["signature"], sig["message_hash"], keys["public_key"], keys["size"])'
+            },
+            {
+                'operation': 'Import Keys',
+                'code': 'import_keys(session_id, public_key, private_key)'
             }
         ]
     }
