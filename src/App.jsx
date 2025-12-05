@@ -66,6 +66,11 @@ function App() {
       return;
     }
 
+    if (algorithm === "aes" && !key.trim()) {
+      setError("Please enter an AES key");
+      return;
+    }
+
     if (!input.trim()) {
       setError("Please enter text to process");
       return;
@@ -76,7 +81,49 @@ function App() {
     try {
       if (algorithm === "aes") {
         // AES
-        setError("AES backend not yet implemented.");
+        if (mode === "encrypt") {
+          // Encrypt
+          const response = await fetch(`${API_BASE_URL}/aes/encrypt`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              message: input,
+              key: key,
+              size: keySize,
+            }),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok || !data.success) {
+            throw new Error(data.error || "Encryption failed");
+          }
+
+          setOutput(data.ciphertext);
+        } else {
+          // Decrypt
+          const response = await fetch(`${API_BASE_URL}/aes/decrypt`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              ciphertext: input,
+              key: key,
+              size: keySize,
+            }),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok || !data.success) {
+            throw new Error(data.error || "Decryption failed");
+          }
+
+          setOutput(data.plaintext);
+        }
       } else {
         // RSA
         if (mode === "encrypt") {
@@ -331,14 +378,52 @@ function App() {
               >
                 Key
               </label>
-              <textarea
-                id="key"
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                placeholder="Enter encryption key"
-                rows="1"
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-gray-900 focus:border-gray-900 outline-none resize-none font-mono"
-              />
+              <div className="flex gap-2">
+                <textarea
+                  id="key"
+                  value={key}
+                  onChange={(e) => setKey(e.target.value)}
+                  placeholder="Enter encryption key (hex format)"
+                  rows="1"
+                  className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-gray-900 focus:border-gray-900 outline-none resize-none font-mono"
+                />
+                <button
+                  onClick={async () => {
+                    setError("");
+                    setLoading(true);
+                    try {
+                      const response = await fetch(
+                        `${API_BASE_URL}/aes/generate-key`,
+                        {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                          },
+                          body: JSON.stringify({
+                            size: keySize,
+                          }),
+                        }
+                      );
+                      const data = await response.json();
+                      if (!response.ok || !data.success) {
+                        throw new Error(data.error || "Failed to generate key");
+                      }
+                      setKey(data.key);
+                      setError("");
+                    } catch (err) {
+                      setError(
+                        `Error generating key: ${err.message}. Make sure the Flask API is running on port 8080.`
+                      );
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  disabled={loading}
+                  className="px-4 py-2 text-sm font-medium bg-black text-white rounded transition hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  Generate Key
+                </button>
+              </div>
             </div>
           )}
 
