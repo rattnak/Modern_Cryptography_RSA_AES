@@ -21,7 +21,7 @@ This project implements **RSA** and **AES** cryptographic algorithms from scratc
 - Pure Python implementation (no external crypto libraries)
 - Key import/export functionality
 - Flexible input parsing (decimal/hexadecimal)
-- Miller-Rabin primality testing (k=16 rounds)
+- Miller-Rabin primality testing (k=5 rounds)
 - Extended Euclidean Algorithm for modular inverse
 
 **Complete AES Implementation**
@@ -322,10 +322,10 @@ python3 -m pytest api/test_flask_api.py -v
 
 ### Test Coverage
 
-- **RSA Module:** 68+ unit tests across 8 test classes
+- **RSA Module:** 46 unit tests across 8 test classes
   - **Mathematical operations:** GCD, Extended GCD, Modular inverse
   - **Prime generation:** Miller-Rabin (18+ known primes, 15+ composites tested)
-  - **Encryption/decryption workflows:** 14+ test variations
+  - **Encryption/decryption workflows:** Multiple test variations
   - **Digital signatures:** Sign/verify operations, SHA-256 hashing, wrong key detection
   - **Edge cases:** Message = 0, 1, n-1, message > n error handling
   - **Text conversion:** Unicode support, emoji, special characters
@@ -338,7 +338,7 @@ python3 -m pytest api/test_flask_api.py -v
   - RSA and AES endpoints
   - Session management
   - Error handling
-- **Total:** 94+ tests (68 RSA + 26 API)
+- **Total:** 72+ tests (46 RSA + 26 API)
 
 ### Performance Benchmarking
 
@@ -363,7 +363,8 @@ See [RUN_BENCHMARK.md](RUN_BENCHMARK.md) for detailed instructions.
 ### What's Implemented ✅
 
 **RSA:**
-- ✅ **Prime number generation** (Miller-Rabin primality test, k=16 rounds)
+- ✅ **Prime number generation** (Miller-Rabin primality test, k=5 rounds, ≈0.1% error)
+- ⚠️ **Randomness:** Uses `random` module (NOT cryptographically secure)
 - ✅ **Modular arithmetic** (Extended Euclidean Algorithm for modular inverse)
 - ✅ **Public/Private key generation** (e=65537, d computed via mod inverse)
 - ✅ **Encryption with public key** (c = m^e mod n)
@@ -593,11 +594,11 @@ chmod +x start_all.sh
 - ✅ **Authentication and non-repudiation support**
 - ✅ Key import/export functionality
 - ✅ Flexible input parsing (hex/decimal)
-- ✅ Miller-Rabin primality testing (k=16, error < 0.00000002%)
+- ✅ Miller-Rabin primality testing (k=5, error ≈ 0.1%)
 - ✅ Extended Euclidean Algorithm for modular inverse
 - ✅ REST API (port 8080)
 - ✅ Interactive web UI (port 5173)
-- ✅ 94+ unit tests (68 RSA + 26 API)
+- ✅ 72+ unit tests (46 RSA + 26 API)
 - ✅ Performance benchmarks with visual graphs
 
 **Perfect for:**
@@ -610,7 +611,7 @@ chmod +x start_all.sh
 **Quick Commands:**
 ```bash
 # Run all tests
-python3 rsa/test_rsa.py                    # 68 core RSA tests
+python3 rsa/test_rsa.py                    # 46 core RSA tests
 python3 -m pytest api/test_flask_api.py -v # 26 API tests
 python3 -m pytest aes/test_aes.py -v       # AES tests
 
