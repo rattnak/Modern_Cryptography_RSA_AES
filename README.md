@@ -15,11 +15,14 @@ This project implements **RSA** and **AES** cryptographic algorithms from scratc
 
 **Complete RSA Implementation**
 - Asymmetric encryption/decryption
-- Digital signatures with verification
+- **Digital signatures with SHA-256 hashing and verification**
+- **Signature authentication and non-repudiation**
 - Key sizes: 256, 512, 1024, 2048-bit
 - Pure Python implementation (no external crypto libraries)
 - Key import/export functionality
 - Flexible input parsing (decimal/hexadecimal)
+- Miller-Rabin primality testing (k=16 rounds)
+- Extended Euclidean Algorithm for modular inverse
 
 **Complete AES Implementation**
 - Symmetric encryption/decryption
@@ -197,13 +200,32 @@ npm run dev
 5. Click **Encrypt** → See ciphertext
 6. Click **Decrypt** → Original message restored
 
-### Digital Signatures
+### Digital Signatures (SHA-256 Based)
 
+**What are Digital Signatures?**
+Digital signatures provide:
+- **Authentication:** Proves the message came from the claimed sender
+- **Non-repudiation:** Signer cannot deny signing the message
+- **Integrity:** Detects if the message was tampered with
+
+**How It Works:**
+1. Message is hashed using SHA-256 (collision-resistant cryptographic hash)
+2. Hash is encrypted with the **private key** to create signature
+3. Anyone can verify using the **public key**
+
+**Using the Interface:**
 1. Generate RSA keys (if not already done)
-2. Enter a message
-3. Click **Sign Message**
-4. Copy the signature
-5. Click **Verify Signature** → Shows "Valid" or "Invalid"
+2. Enter a message in the text box
+3. Click **Sign Message** → Creates signature using SHA-256 hash
+4. Signature is displayed (can be copied)
+5. Click **Verify Signature** → Shows "Valid ✓" or "Invalid ✗"
+6. Try modifying the message → Signature verification fails (integrity check)
+
+**Security Properties:**
+- Uses SHA-256 for collision resistance
+- Private key required for signing (only you can sign)
+- Public key used for verification (anyone can verify)
+- Computationally infeasible to forge signatures
 
 ### AES Encryption/Decryption
 
@@ -255,6 +277,25 @@ curl -X POST http://localhost:8080/api/encrypt \
   -d '{"message": "Hello World", "session_id": "demo"}'
 ```
 
+**Sign Message (Digital Signature):**
+```bash
+curl -X POST http://localhost:8080/api/sign \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Important Document", "session_id": "demo"}'
+```
+
+**Verify Signature:**
+```bash
+curl -X POST http://localhost:8080/api/verify \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Important Document",
+    "signature": "123456789...",
+    "message_hash": "abcdef...",
+    "session_id": "demo"
+  }'
+```
+
 **Generate AES Key:**
 ```bash
 curl -X POST http://localhost:8080/api/aes/generate-key \
@@ -281,11 +322,14 @@ python3 -m pytest api/test_flask_api.py -v
 
 ### Test Coverage
 
-- **RSA Module:** 46 unit tests across 8 test classes
-  - Mathematical operations (GCD, modular inverse)
-  - Prime generation (Miller-Rabin)
-  - Encryption/decryption workflows
-  - Digital signatures
+- **RSA Module:** 68+ unit tests across 8 test classes
+  - **Mathematical operations:** GCD, Extended GCD, Modular inverse
+  - **Prime generation:** Miller-Rabin (18+ known primes, 15+ composites tested)
+  - **Encryption/decryption workflows:** 14+ test variations
+  - **Digital signatures:** Sign/verify operations, SHA-256 hashing, wrong key detection
+  - **Edge cases:** Message = 0, 1, n-1, message > n error handling
+  - **Text conversion:** Unicode support, emoji, special characters
+  - **Security invariants:** p ≠ q, gcd(e, φ(n)) = 1, e×d ≡ 1 (mod φ(n))
 - **AES Module:** Comprehensive unit tests
   - Key expansion
   - SubBytes, ShiftRows, MixColumns
@@ -294,7 +338,7 @@ python3 -m pytest api/test_flask_api.py -v
   - RSA and AES endpoints
   - Session management
   - Error handling
-- **Total:** 72+ tests
+- **Total:** 94+ tests (68 RSA + 26 API)
 
 ### Performance Benchmarking
 
@@ -319,14 +363,19 @@ See [RUN_BENCHMARK.md](RUN_BENCHMARK.md) for detailed instructions.
 ### What's Implemented ✅
 
 **RSA:**
-- ✅ Prime number generation (Miller-Rabin primality test)
-- ✅ Modular arithmetic (Extended Euclidean Algorithm)
-- ✅ Public/Private key generation
-- ✅ Encryption with public key
-- ✅ Decryption with private key
-- ✅ Digital signatures (SHA-256 hash)
-- ✅ Signature verification
-- ✅ Flexible input parsing (hex/decimal)
+- ✅ **Prime number generation** (Miller-Rabin primality test, k=16 rounds)
+- ✅ **Modular arithmetic** (Extended Euclidean Algorithm for modular inverse)
+- ✅ **Public/Private key generation** (e=65537, d computed via mod inverse)
+- ✅ **Encryption with public key** (c = m^e mod n)
+- ✅ **Decryption with private key** (m = c^d mod n)
+- ✅ **Digital signatures**
+  - SHA-256 cryptographic hashing
+  - Sign: s = hash(m)^d mod n
+  - Verify: hash(m) == s^e mod n
+  - Authentication and non-repudiation
+- ✅ **Signature verification** (detects tampering and wrong keys)
+- ✅ **Flexible input parsing** (hex/decimal support)
+- ✅ **Comprehensive validation** (message < n, p ≠ q, coprimality checks)
 
 **AES:**
 - ✅ Key expansion
@@ -387,9 +436,18 @@ See [RUN_BENCHMARK.md](RUN_BENCHMARK.md) for detailed instructions.
    - Modular exponentiation
 
 5. **Digital Signatures** (Lines 310-385)
-   - SHA-256 hashing
-   - Sign: s = hash(m)^d mod n
-   - Verify: hash(m) == s^e mod n
+   - **SHA-256 hashing:** Cryptographically secure hash function
+   - **Signing process:**
+     1. Compute hash: h = SHA256(message)
+     2. Sign: s = h^d mod n (using private key)
+   - **Verification process:**
+     1. Compute hash: h = SHA256(message)
+     2. Decrypt signature: h' = s^e mod n (using public key)
+     3. Verify: h == h' (authentic if match)
+   - **Security properties:**
+     - Collision resistance (SHA-256)
+     - Pre-image resistance
+     - Unforgeable without private key
 
 ### AES Algorithm (aes/aes.py)
 
@@ -531,12 +589,15 @@ chmod +x start_all.sh
 **Features:**
 - ✅ RSA encryption/decryption (256, 512, 1024, 2048-bit)
 - ✅ AES encryption/decryption (128, 192, 256-bit)
-- ✅ Digital signatures with verification
+- ✅ **Digital signatures with SHA-256 hashing and verification**
+- ✅ **Authentication and non-repudiation support**
 - ✅ Key import/export functionality
 - ✅ Flexible input parsing (hex/decimal)
+- ✅ Miller-Rabin primality testing (k=16, error < 0.00000002%)
+- ✅ Extended Euclidean Algorithm for modular inverse
 - ✅ REST API (port 8080)
 - ✅ Interactive web UI (port 5173)
-- ✅ 72+ unit tests (46 RSA + 26 API)
+- ✅ 94+ unit tests (68 RSA + 26 API)
 - ✅ Performance benchmarks with visual graphs
 
 **Perfect for:**
@@ -549,7 +610,7 @@ chmod +x start_all.sh
 **Quick Commands:**
 ```bash
 # Run all tests
-python3 rsa/test_rsa.py                    # 46 core RSA tests
+python3 rsa/test_rsa.py                    # 68 core RSA tests
 python3 -m pytest api/test_flask_api.py -v # 26 API tests
 python3 -m pytest aes/test_aes.py -v       # AES tests
 
