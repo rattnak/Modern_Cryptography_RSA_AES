@@ -1,8 +1,8 @@
 # RSA Cryptosystem Implementation
 
-This is an RSA encryption implementation based on the 
-[Understanding Cryptography: From Established Symmetric and Asymmetric Ciphers to Post-Quantum Algorithms](https://learn.lajevardi.id.ir/Cryptography/Refrence/2.pdf) textbook. 
-It includes both a Python library and a Flask REST API for encryption, decryption, and digital signatures.
+This is an RSA encryption implementation based on the
+[Understanding Cryptography: From Established Symmetric and Asymmetric Ciphers to Post-Quantum Algorithms](https://learn.lajevardi.id.ir/Cryptography/Refrence/2.pdf) textbook.
+It includes both a Python library, Flask REST API integration, and performance benchmarking tools for encryption, decryption, and digital signatures.
 
 
 ---
@@ -18,35 +18,34 @@ python3 test_rsa.py
 
 You should see: `46 tests passed`
 
-### Flask API Tests (requires Flask)
+### API Integration Tests
+
+API tests are now located in the `api/` directory at the project root:
 
 ```bash
-# Create virtual environment
-python3 -m venv venv
-
-# Activate it
+# From project root, with virtual environment activated
 source venv/bin/activate
-
-# Install Flask
-pip install flask flask-cors
-
-# Run tests
-python test_rsa.py         # 46 tests
-python test_flask_api.py   # 21 tests
+python3 -m pytest api/test_flask_api.py -v
 ```
 
-Total: 67 tests, all passing.
+Total: 46 core tests + 26 API integration tests = 72 tests, all passing.
 
 ---
 
-## How to Start the Flask Server
+## How to Start the Server
+
+The unified Flask server (handling both RSA and AES) is now located in the `api/` directory at the project root:
 
 ```bash
-# Make sure venv is activated
+# From project root
 source venv/bin/activate
+python3 api/app.py
+```
 
-# Start server
-python flask_rsa.py
+Or use the convenient startup script:
+```bash
+# From project root - starts both backend and frontend
+./start_all.sh
 ```
 
 Server runs on `http://localhost:8080`
@@ -89,6 +88,13 @@ curl http://localhost:8080/api/health
 - 512 bits (demos)
 - 1024 bits
 - 2048 bits
+
+**Additional Features:**
+- Key import/export functionality
+- Flexible input parsing (decimal/hexadecimal)
+- Session management for API keys
+- Comprehensive error handling
+- Performance benchmarking tools
 
 ---
 
@@ -136,7 +142,7 @@ decrypted = RSA.decrypt(ciphertext, private_key)
 
 ## Flask API Endpoints
 
-All endpoints use `http://localhost:8080/api/`
+The RSA API is now integrated into the unified server at `api/app.py`. All endpoints use `http://localhost:8080/api/`
 
 ### GET /api/health
 Check if server is running.
@@ -190,43 +196,94 @@ curl -X POST http://localhost:8080/api/verify \
   -d '{"message": "Document", "signature": "SIG", "message_hash": "HASH", "session_id": "test"}'
 ```
 
+### POST /api/import-keys
+Import existing RSA keys.
+
+```bash
+curl -X POST http://localhost:8080/api/import-keys \
+  -H "Content-Type: application/json" \
+  -d '{"public_key": {...}, "private_key": {...}, "session_id": "test"}'
+```
+
+### POST /api/get-keys
+Retrieve current session keys.
+
+```bash
+curl -X POST http://localhost:8080/api/get-keys \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "test"}'
+```
+
 ---
 
 ## Files
 
 **Core Implementation:**
-- `rsa.py` - Simple function-based API
+- `__init__.py` - Package initialization and exports
+- `rsa.py` - Simple function-based API wrapper
 - `rsa_system.py` - Object-oriented RSA implementation
-- `test_rsa.py` - 46 unit tests
+- `test_rsa.py` - 46 comprehensive unit tests
 
-**Flask API:**
-- `flask_rsa.py` - REST API server
-- `test_flask_api.py` - 21 API tests
+**Legacy Flask API:**
+- `flask_rsa.py` - Standalone RSA server (now integrated into `api/app.py`)
 
-**Other:**
-- `requirements.txt` - Python dependencies
+**Performance Benchmarking:**
+- `benchmark_rsa.py` - Command-line benchmarking tool
+- `benchmark_with_graph.py` - Visual benchmarking with matplotlib graphs
+
+**Note:** API server and tests have been moved to the `api/` directory at project root for unified RSA+AES handling.
 
 ---
 
 ## Testing Coverage
 
-**46 Core RSA Tests:**
+**46 Core RSA Tests (test_rsa.py):**
 - Mathematical functions (GCD, modular inverse, etc.)
-- Prime number generation
-- Key pair generation
-- Encryption/decryption
-- Text conversion
-- Edge cases
+- Prime number generation (Miller-Rabin primality test)
+- Key pair generation for multiple key sizes
+- Encryption/decryption operations
+- Text conversion and encoding
+- Edge cases and error handling
 - Integration tests
 
-**21 Flask API Tests:**
-- Health check
-- Key generation
-- Encryption/decryption
-- Digital signatures
-- Error handling
+**26 API Integration Tests (api/test_flask_api.py):**
+- Health check endpoint
+- Key generation with various sizes
+- Encryption/decryption workflows
+- Digital signatures and verification
+- Error handling and validation
 - Session management
-- Unicode support
+- Unicode and special character support
+- Key import/export functionality
+
+**Performance Benchmarking:**
+- Execution time measurements for all key sizes
+- Graphical performance analysis
+- Comparison across different operations
+
+---
+
+## Performance Benchmarking
+
+Run performance tests to measure RSA operations across different key sizes:
+
+**Text-based benchmark:**
+```bash
+cd rsa
+python3 benchmark_rsa.py
+```
+
+**Visual benchmark with graphs:**
+```bash
+# From project root
+python3 rsa/benchmark_with_graph.py
+```
+
+This generates matplotlib graphs showing:
+- Key generation times
+- Encryption performance
+- Decryption performance
+- Comparison across 256, 512, 1024, and 2048-bit keys
 
 ---
 
@@ -234,21 +291,29 @@ curl -X POST http://localhost:8080/api/verify \
 
 **Flask not installed:**
 ```bash
+# From project root
 source venv/bin/activate
-pip install flask flask-cors
+pip install flask flask-cors matplotlib numpy
 ```
 
 **Port 8080 in use:**
-Edit `flask_rsa.py` line 431, change port to 8081.
+Edit `api/app.py` and change the port number.
 
 **Virtual environment not found:**
 ```bash
+# From project root
 python3 -m venv venv
 source venv/bin/activate
 ```
 
-**Tests fail:**
-Make sure you're in the `rsa` directory.
+**Core tests fail:**
+Make sure you're in the `rsa` directory when running `test_rsa.py`.
+
+**API tests fail:**
+Make sure you're in the project root and the virtual environment is activated.
+
+**Import errors:**
+The `rsa` module now uses `__init__.py`. Make sure to import from the project root or install as a package.
 
 ---
 
@@ -280,21 +345,45 @@ Implementation follows [Understanding Cryptography: From Established Symmetric a
 ## Quick Commands
 
 ```bash
-# Run core tests
+# Run core RSA tests
+cd rsa
 python3 test_rsa.py
 
-# Setup Flask
+# Setup environment (from project root)
 python3 -m venv venv
 source venv/bin/activate
-pip install flask flask-cors
+pip install flask flask-cors matplotlib numpy
 
-# Run all tests
-python test_rsa.py
-python test_flask_api.py
+# Install frontend dependencies
+npm install
 
-# Start server
-python flask_rsa.py
+# Start everything (easiest)
+./start_all.sh
+
+# Or manually start backend and frontend
+python3 api/app.py          # Terminal 1
+npm run dev                 # Terminal 2
+
+# Run API integration tests
+python3 -m pytest api/test_flask_api.py -v
+
+# Run performance benchmarks
+python3 rsa/benchmark_rsa.py              # Text output
+python3 rsa/benchmark_with_graph.py       # With graphs
 
 # Test server
 curl http://localhost:8080/api/health
 ```
+
+---
+
+## Integration with Project
+
+This RSA implementation is part of a larger cryptography project that includes:
+
+- **AES Implementation** (`aes/` directory)
+- **Unified REST API** (`api/app.py` - handles both RSA and AES)
+- **React Frontend** (`src/` directory with Vite + Tailwind)
+- **Comprehensive Documentation** (see main [README.md](../README.md))
+
+For complete project setup and usage, refer to the main README at the project root.
