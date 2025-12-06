@@ -3,8 +3,8 @@ import { useState } from "react";
 const API_BASE_URL = "http://localhost:8080/api";
 
 function App() {
-  const [algorithm, setAlgorithm] = useState("aes"); // 'aes' or 'rsa'
-  const [mode, setMode] = useState("encrypt");
+  const [algorithm, setAlgorithm] = useState("aes"); // 'aes', 'rsa', or 'signature'
+  const [mode, setMode] = useState("encrypt"); // 'encrypt', 'decrypt', 'sign', 'verify'
   const [key, setKey] = useState("");
   const [keySize, setKeySize] = useState(128);
   const [rsaKeySize, setRsaKeySize] = useState(2048);
@@ -19,6 +19,10 @@ function App() {
   const [privateKey, setPrivateKey] = useState(null);
   const [hasKeys, setHasKeys] = useState(false);
   const [showKeys, setShowKeys] = useState(true);
+
+  // Digital signature state
+  const [signature, setSignature] = useState("");
+  const [messageHash, setMessageHash] = useState("");
 
   // Generate RSA keys
   const handleGenerateKeys = async () => {
@@ -61,7 +65,7 @@ function App() {
     setError("");
     setOutput("");
 
-    if (algorithm === "rsa" && !hasKeys) {
+    if ((algorithm === "rsa" || algorithm === "signature") && !hasKeys) {
       setError("Please generate RSA keys first");
       return;
     }
@@ -77,8 +81,8 @@ function App() {
       if (algorithm === "aes") {
         // AES
         setError("AES backend not yet implemented.");
-      } else {
-        // RSA
+      } else if (algorithm === "rsa") {
+        // RSA Encryption/Decryption
         if (mode === "encrypt") {
           // Encrypt
           const response = await fetch(`${API_BASE_URL}/encrypt`, {
@@ -99,7 +103,7 @@ function App() {
           }
 
           setOutput(data.ciphertext);
-        } else {
+        } else if (mode === "decrypt") {
           // Decrypt
           const response = await fetch(`${API_BASE_URL}/decrypt`, {
             method: "POST",
@@ -120,6 +124,62 @@ function App() {
 
           setOutput(data.plaintext);
         }
+      } else if (algorithm === "signature") {
+        // Digital Signatures
+        if (mode === "sign") {
+          // Sign message
+          const response = await fetch(`${API_BASE_URL}/sign`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              message: input,
+              session_id: sessionId,
+            }),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok || !data.success) {
+            throw new Error(data.error || "Signing failed");
+          }
+
+          setSignature(data.signature);
+          setMessageHash(data.message_hash);
+          setOutput(`Message signed successfully!\n\nSignature created with private key.`);
+        } else if (mode === "verify") {
+          // Verify signature
+          if (!signature.trim() || !messageHash.trim()) {
+            setError("Please provide both signature and message hash");
+            return;
+          }
+
+          const response = await fetch(`${API_BASE_URL}/verify`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              message: input,
+              signature: signature,
+              message_hash: messageHash,
+              session_id: sessionId,
+            }),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok || !data.success) {
+            throw new Error(data.error || "Verification failed");
+          }
+
+          setOutput(
+            data.valid
+              ? "✓ Signature is VALID\n\nThe signature was created by the private key holder and the message has not been modified."
+              : "✗ Signature is INVALID\n\nThe signature does not match the message or was not created by the corresponding private key."
+          );
+        }
       }
     } catch (err) {
       setError(
@@ -135,14 +195,27 @@ function App() {
     setInput("");
     setOutput("");
     setError("");
+    setSignature("");
+    setMessageHash("");
   };
 
   const handleAlgorithmChange = (newAlgorithm) => {
     setAlgorithm(newAlgorithm);
     handleClear();
-    setPublicKey(null);
-    setPrivateKey(null);
-    setHasKeys(false);
+
+    // Set default mode based on algorithm
+    if (newAlgorithm === "signature") {
+      setMode("sign");
+    } else {
+      setMode("encrypt");
+    }
+
+    // Only reset keys when switching away from RSA/signature
+    if (newAlgorithm === "aes") {
+      setPublicKey(null);
+      setPrivateKey(null);
+      setHasKeys(false);
+    }
   };
 
   return (
@@ -150,10 +223,10 @@ function App() {
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-gray-900 mb-1">
-            Cryptography Demo
+            Modern Cryptography: RSA and AES
           </h1>
           <p className="text-sm text-gray-600">
-            Encrypt and decrypt text using AES or RSA
+            Encrypt, decrypt, sign, and verify using AES or RSA
           </p>
         </div>
 
@@ -180,12 +253,22 @@ function App() {
             >
               RSA (Asymmetric)
             </button>
+            <button
+              onClick={() => handleAlgorithmChange("signature")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition ${
+                algorithm === "signature"
+                  ? "border-gray-900 text-gray-900"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Digital Signature
+            </button>
           </div>
         </div>
 
         <div className="bg-white border border-gray-200 rounded p-6 space-y-5">
           {/* RSA Key Generation Section */}
-          {algorithm === "rsa" && (
+          {(algorithm === "rsa" || algorithm === "signature") && (
             <div className="pb-5 border-b border-gray-200">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 RSA Key Size
@@ -280,28 +363,55 @@ function App() {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Mode
             </label>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setMode("encrypt")}
-                className={`flex-1 py-2 px-4 text-sm font-medium rounded transition ${
-                  mode === "encrypt"
-                    ? "bg-gray-900 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                Encrypt
-              </button>
-              <button
-                onClick={() => setMode("decrypt")}
-                className={`flex-1 py-2 px-4 text-sm font-medium rounded transition ${
-                  mode === "decrypt"
-                    ? "bg-gray-900 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                Decrypt
-              </button>
-            </div>
+            {algorithm === "signature" ? (
+              // Signature modes: Sign, Verify
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setMode("sign")}
+                  className={`flex-1 py-2 px-4 text-sm font-medium rounded transition ${
+                    mode === "sign"
+                      ? "bg-gray-900 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  Sign
+                </button>
+                <button
+                  onClick={() => setMode("verify")}
+                  className={`flex-1 py-2 px-4 text-sm font-medium rounded transition ${
+                    mode === "verify"
+                      ? "bg-gray-900 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  Verify
+                </button>
+              </div>
+            ) : (
+              // AES/RSA modes: Encrypt, Decrypt only
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setMode("encrypt")}
+                  className={`flex-1 py-2 px-4 text-sm font-medium rounded transition ${
+                    mode === "encrypt"
+                      ? "bg-gray-900 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  Encrypt
+                </button>
+                <button
+                  onClick={() => setMode("decrypt")}
+                  className={`flex-1 py-2 px-4 text-sm font-medium rounded transition ${
+                    mode === "decrypt"
+                      ? "bg-gray-900 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  Decrypt
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Key Size Selection - Only for AES */}
@@ -342,13 +452,57 @@ function App() {
             </div>
           )}
 
+          {/* Signature and Hash inputs for Verify mode */}
+          {algorithm === "signature" && mode === "verify" && (
+            <>
+              <div>
+                <label
+                  htmlFor="signature"
+                  className="block text-sm font-medium text-gray-700 mb-2"
+                >
+                  Signature
+                </label>
+                <textarea
+                  id="signature"
+                  value={signature}
+                  onChange={(e) => setSignature(e.target.value)}
+                  placeholder="Enter signature to verify"
+                  rows="2"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-gray-900 focus:border-gray-900 outline-none resize-y font-mono"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="messageHash"
+                  className="block text-sm font-medium text-gray-700 mb-2"
+                >
+                  Message Hash
+                </label>
+                <textarea
+                  id="messageHash"
+                  value={messageHash}
+                  onChange={(e) => setMessageHash(e.target.value)}
+                  placeholder="Enter message hash"
+                  rows="2"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-gray-900 focus:border-gray-900 outline-none resize-y font-mono"
+                />
+              </div>
+            </>
+          )}
+
           {/* Input Text */}
           <div>
             <label
               htmlFor="input"
               className="block text-sm font-medium text-gray-700 mb-2"
             >
-              {mode === "encrypt" ? "Plaintext" : "Ciphertext"}
+              {mode === "encrypt"
+                ? "Plaintext"
+                : mode === "decrypt"
+                ? "Ciphertext"
+                : mode === "sign"
+                ? "Message to Sign"
+                : "Original Message"}
             </label>
             <textarea
               id="input"
@@ -357,10 +511,14 @@ function App() {
               placeholder={
                 mode === "encrypt"
                   ? "Enter text to encrypt"
-                  : "Enter text to decrypt"
+                  : mode === "decrypt"
+                  ? "Enter text to decrypt"
+                  : mode === "sign"
+                  ? "Enter message to sign"
+                  : "Enter original message to verify"
               }
               rows="4"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-gray-900 focus:border-gray-900 outline-none resize-none"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-gray-900 focus:border-gray-900 outline-none resize-y"
             />
           </div>
 
@@ -368,14 +526,18 @@ function App() {
           <div className="flex gap-2">
             <button
               onClick={handleProcess}
-              disabled={loading || (algorithm === "rsa" && !hasKeys)}
+              disabled={loading || ((algorithm === "rsa" || algorithm === "signature") && !hasKeys)}
               className="flex-1 bg-gray-900 text-white py-2 px-4 text-sm font-medium rounded hover:bg-gray-800 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
               {loading
                 ? "Processing..."
                 : mode === "encrypt"
                 ? "Encrypt"
-                : "Decrypt"}
+                : mode === "decrypt"
+                ? "Decrypt"
+                : mode === "sign"
+                ? "Sign Message"
+                : "Verify Signature"}
             </button>
             <button
               onClick={handleClear}
@@ -397,26 +559,81 @@ function App() {
           {output && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                {mode === "encrypt" ? "Encrypted" : "Decrypted"}
+                {mode === "encrypt"
+                  ? "Encrypted"
+                  : mode === "decrypt"
+                  ? "Decrypted"
+                  : mode === "sign"
+                  ? "Signature Result"
+                  : "Verification Result"}
               </label>
               <div className="bg-gray-50 border border-gray-200 rounded p-3">
-                <p className="font-mono text-xs break-all text-gray-800">
+                <p className="font-mono text-xs break-all text-gray-800 whitespace-pre-wrap">
                   {output}
                 </p>
               </div>
-              <button
-                onClick={() => navigator.clipboard.writeText(output)}
-                className="mt-2 text-xs text-gray-600 hover:text-gray-900 underline"
-              >
-                Copy to clipboard
-              </button>
+              {mode !== "sign" && mode !== "verify" && (
+                <button
+                  onClick={() => navigator.clipboard.writeText(output)}
+                  className="mt-2 text-xs text-gray-600 hover:text-gray-900 underline"
+                >
+                  Copy to clipboard
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Signature Output (for Sign mode) */}
+          {algorithm === "signature" && mode === "sign" && signature && messageHash && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Digital Signature
+                </label>
+                <div className="bg-gray-50 border border-gray-200 rounded p-3">
+                  <p className="font-mono text-xs break-all text-gray-800">
+                    {signature}
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigator.clipboard.writeText(signature)}
+                  className="mt-2 text-xs text-gray-600 hover:text-gray-900 underline"
+                >
+                  Copy signature
+                </button>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Message Hash (SHA-256)
+                </label>
+                <div className="bg-gray-50 border border-gray-200 rounded p-3">
+                  <p className="font-mono text-xs break-all text-gray-800">
+                    {messageHash}
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigator.clipboard.writeText(messageHash)}
+                  className="mt-2 text-xs text-gray-600 hover:text-gray-900 underline"
+                >
+                  Copy hash
+                </button>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                <p className="text-xs text-blue-800">
+                  <strong>Tip:</strong> Copy these values to verify the signature later using the "Verify" mode.
+                </p>
+              </div>
             </div>
           )}
 
           {/* Info */}
           <div className="pt-4 border-t border-gray-200">
             <p className="text-xs text-gray-500 mb-2">
-              {algorithm === "aes" ? "AES Details:" : "RSA Details:"}
+              {algorithm === "aes"
+                ? "AES Details:"
+                : algorithm === "rsa"
+                ? "RSA Details:"
+                : "Digital Signature Details:"}
             </p>
             {algorithm === "aes" ? (
               <ul className="text-xs text-gray-600 space-y-1">
@@ -426,13 +643,22 @@ function App() {
                 <li>PKCS7 padding, variable rounds (10/12/14)</li>
                 <li>Key sizes: 16/24/32 bytes for 128/192/256-bit</li>
               </ul>
-            ) : (
+            ) : algorithm === "rsa" ? (
               <ul className="text-xs text-gray-600 space-y-1">
                 <li>RSA asymmetric encryption (public/private key pair)</li>
                 <li>Custom Python implementation via Flask API</li>
                 <li>Encrypt with public key, decrypt with private key</li>
                 <li>Key sizes: 256/512/1024/2048-bit</li>
                 <li>Based on prime factorization difficulty</li>
+              </ul>
+            ) : (
+              <ul className="text-xs text-gray-600 space-y-1">
+                <li>RSA-based digital signatures with SHA-256 hashing</li>
+                <li>Custom Python implementation via Flask API</li>
+                <li>Sign with private key, verify with public key</li>
+                <li>Ensures message authenticity and integrity</li>
+                <li>Non-repudiation: only private key holder can sign</li>
+                <li>Key sizes: 256/512/1024/2048-bit</li>
               </ul>
             )}
           </div>
