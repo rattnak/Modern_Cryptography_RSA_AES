@@ -24,6 +24,14 @@ function App() {
   const [signature, setSignature] = useState("");
   const [messageHash, setMessageHash] = useState("");
 
+  // Mode-specific input cache
+  const [modeInputCache, setModeInputCache] = useState({
+    encrypt: "",
+    decrypt: "",
+    sign: "",
+    verify: ""
+  });
+
   // Generate RSA keys
   const handleGenerateKeys = async () => {
     setError("");
@@ -190,6 +198,12 @@ function App() {
     }
   };
 
+  const handleResetKeys = () => {
+    setPublicKey(null);
+    setPrivateKey(null);
+    setHasKeys(false);
+  };
+
   const handleClear = () => {
     setKey("");
     setInput("");
@@ -199,9 +213,35 @@ function App() {
     setMessageHash("");
   };
 
+  const handleModeChange = (newMode) => {
+    // Save current input to cache before switching
+    setModeInputCache((prev) => ({
+      ...prev,
+      [mode]: input,
+    }));
+
+    // Switch to new mode
+    setMode(newMode);
+
+    // Restore cached input for the new mode
+    setInput(modeInputCache[newMode] || "");
+
+    // Clear output and errors when switching modes
+    setOutput("");
+    setError("");
+  };
+
   const handleAlgorithmChange = (newAlgorithm) => {
     setAlgorithm(newAlgorithm);
     handleClear();
+
+    // Reset input cache when switching algorithms
+    setModeInputCache({
+      encrypt: "",
+      decrypt: "",
+      sign: "",
+      verify: ""
+    });
 
     // Set default mode based on algorithm
     if (newAlgorithm === "signature") {
@@ -292,6 +332,15 @@ function App() {
                 >
                   {hasKeys ? "Keys Generated" : "Generate Keys"}
                 </button>
+                {hasKeys && (
+                  <button
+                    onClick={handleResetKeys}
+                    disabled={loading}
+                    className="px-4 py-2 text-sm font-medium bg-gray-600 text-white rounded hover:bg-gray-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    Reset Keys
+                  </button>
+                )}
               </div>
 
               {/* Display Keys */}
@@ -367,7 +416,7 @@ function App() {
               // Signature modes: Sign, Verify
               <div className="flex gap-2">
                 <button
-                  onClick={() => setMode("sign")}
+                  onClick={() => handleModeChange("sign")}
                   className={`flex-1 py-2 px-4 text-sm font-medium rounded transition ${
                     mode === "sign"
                       ? "bg-gray-900 text-white"
@@ -377,7 +426,7 @@ function App() {
                   Sign
                 </button>
                 <button
-                  onClick={() => setMode("verify")}
+                  onClick={() => handleModeChange("verify")}
                   className={`flex-1 py-2 px-4 text-sm font-medium rounded transition ${
                     mode === "verify"
                       ? "bg-gray-900 text-white"
@@ -391,7 +440,7 @@ function App() {
               // AES/RSA modes: Encrypt, Decrypt only
               <div className="flex gap-2">
                 <button
-                  onClick={() => setMode("encrypt")}
+                  onClick={() => handleModeChange("encrypt")}
                   className={`flex-1 py-2 px-4 text-sm font-medium rounded transition ${
                     mode === "encrypt"
                       ? "bg-gray-900 text-white"
@@ -401,7 +450,7 @@ function App() {
                   Encrypt
                 </button>
                 <button
-                  onClick={() => setMode("decrypt")}
+                  onClick={() => handleModeChange("decrypt")}
                   className={`flex-1 py-2 px-4 text-sm font-medium rounded transition ${
                     mode === "decrypt"
                       ? "bg-gray-900 text-white"
@@ -460,7 +509,7 @@ function App() {
                   htmlFor="signature"
                   className="block text-sm font-medium text-gray-700 mb-2"
                 >
-                  Signature
+                  Digital Signature
                 </label>
                 <textarea
                   id="signature"
