@@ -156,7 +156,7 @@ def benchmark_prime_generation(bits, iterations=10):
 
 def main():
     print("="*60)
-    print("RSA Performance Benchmark Suite (CORRECTED)")
+    print("RSA Performance Benchmark Suite")
     print("CSCI 663 - Cryptography Project")
     print("="*60)
 
