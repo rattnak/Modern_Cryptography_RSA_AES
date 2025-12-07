@@ -54,3 +54,6 @@ instance/
 # OS files
 Thumbs.db
 .DS_Store
+api/
+rsa/.gitignore
+**/.gitignore

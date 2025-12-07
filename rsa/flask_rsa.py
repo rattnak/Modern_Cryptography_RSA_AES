@@ -629,7 +629,7 @@ if __name__ == '__main__':
     print("  • decrypt(ciphertext, key, size)")
     print("  • sign(message, key, size)")
     print("  • verify(message, signature, hash, key, size)")
-    print("\nStarting server on http://localhost:5000")
+    print("\nStarting server on http://localhost:8080")
     print("\nAPI Endpoints:")
     print("  POST /api/generate-keys")
     print("  POST /api/encrypt")
