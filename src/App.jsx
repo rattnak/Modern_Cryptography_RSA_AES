@@ -29,7 +29,7 @@ function App() {
     encrypt: "",
     decrypt: "",
     sign: "",
-    verify: ""
+    verify: "",
   });
 
   // Generate RSA keys
@@ -155,7 +155,9 @@ function App() {
 
           setSignature(data.signature);
           setMessageHash(data.message_hash);
-          setOutput(`Message signed successfully!\n\nSignature created with private key.`);
+          setOutput(
+            `Message signed successfully!\n\nSignature created with private key.`
+          );
         } else if (mode === "verify") {
           // Verify signature
           if (!signature.trim() || !messageHash.trim()) {
@@ -204,6 +206,32 @@ function App() {
     setHasKeys(false);
   };
 
+  // Generate AES key (calls backend AES endpoint and populates `key` textarea)
+  const handleGenerateAESKey = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/aes/generate-key`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ size: keySize }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Failed to generate AES key");
+      }
+      // API returns hex key string
+      setKey(data.key);
+      setOutput(`AES-${data.size} key generated and populated.`);
+    } catch (err) {
+      setError(
+        `Error generating AES key: ${err.message}. Make sure the Flask API is running on port 8080.`
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleClear = () => {
     setKey("");
     setInput("");
@@ -240,7 +268,7 @@ function App() {
       encrypt: "",
       decrypt: "",
       sign: "",
-      verify: ""
+      verify: "",
     });
 
     // Set default mode based on algorithm
@@ -469,15 +497,24 @@ function App() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Key Size
               </label>
-              <select
-                value={keySize}
-                onChange={(e) => setKeySize(parseInt(e.target.value))}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-gray-900 focus:border-gray-900 outline-none bg-white"
-              >
-                <option value={128}>AES-128 (16 bytes, 10 rounds)</option>
-                <option value={192}>AES-192 (24 bytes, 12 rounds)</option>
-                <option value={256}>AES-256 (32 bytes, 14 rounds)</option>
-              </select>
+              <div className="flex gap-2">
+                <select
+                  value={keySize}
+                  onChange={(e) => setKeySize(parseInt(e.target.value))}
+                  className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-gray-900 focus:border-gray-900 outline-none bg-white"
+                >
+                  <option value={128}>AES-128 (16 bytes, 10 rounds)</option>
+                  <option value={192}>AES-192 (24 bytes, 12 rounds)</option>
+                  <option value={256}>AES-256 (32 bytes, 14 rounds)</option>
+                </select>
+                <button
+                  onClick={handleGenerateAESKey}
+                  disabled={loading}
+                  className="px-4 py-2 text-sm font-medium bg-black text-white rounded transition disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  Generate Key
+                </button>
+              </div>
             </div>
           )}
 
@@ -575,7 +612,10 @@ function App() {
           <div className="flex gap-2">
             <button
               onClick={handleProcess}
-              disabled={loading || ((algorithm === "rsa" || algorithm === "signature") && !hasKeys)}
+              disabled={
+                loading ||
+                ((algorithm === "rsa" || algorithm === "signature") && !hasKeys)
+              }
               className="flex-1 bg-gray-900 text-white py-2 px-4 text-sm font-medium rounded hover:bg-gray-800 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
               {loading
@@ -633,47 +673,51 @@ function App() {
           )}
 
           {/* Signature Output (for Sign mode) */}
-          {algorithm === "signature" && mode === "sign" && signature && messageHash && (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Digital Signature
-                </label>
-                <div className="bg-gray-50 border border-gray-200 rounded p-3">
-                  <p className="font-mono text-xs break-all text-gray-800">
-                    {signature}
+          {algorithm === "signature" &&
+            mode === "sign" &&
+            signature &&
+            messageHash && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Digital Signature
+                  </label>
+                  <div className="bg-gray-50 border border-gray-200 rounded p-3">
+                    <p className="font-mono text-xs break-all text-gray-800">
+                      {signature}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(signature)}
+                    className="mt-2 text-xs text-gray-600 hover:text-gray-900 underline"
+                  >
+                    Copy signature
+                  </button>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Message Hash (SHA-256)
+                  </label>
+                  <div className="bg-gray-50 border border-gray-200 rounded p-3">
+                    <p className="font-mono text-xs break-all text-gray-800">
+                      {messageHash}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(messageHash)}
+                    className="mt-2 text-xs text-gray-600 hover:text-gray-900 underline"
+                  >
+                    Copy hash
+                  </button>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                  <p className="text-xs text-blue-800">
+                    <strong>Tip:</strong> Copy these values to verify the
+                    signature later using the "Verify" mode.
                   </p>
                 </div>
-                <button
-                  onClick={() => navigator.clipboard.writeText(signature)}
-                  className="mt-2 text-xs text-gray-600 hover:text-gray-900 underline"
-                >
-                  Copy signature
-                </button>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Message Hash (SHA-256)
-                </label>
-                <div className="bg-gray-50 border border-gray-200 rounded p-3">
-                  <p className="font-mono text-xs break-all text-gray-800">
-                    {messageHash}
-                  </p>
-                </div>
-                <button
-                  onClick={() => navigator.clipboard.writeText(messageHash)}
-                  className="mt-2 text-xs text-gray-600 hover:text-gray-900 underline"
-                >
-                  Copy hash
-                </button>
-              </div>
-              <div className="bg-blue-50 border border-blue-200 rounded p-3">
-                <p className="text-xs text-blue-800">
-                  <strong>Tip:</strong> Copy these values to verify the signature later using the "Verify" mode.
-                </p>
-              </div>
-            </div>
-          )}
+            )}
 
           {/* Info */}
           <div className="pt-4 border-t border-gray-200">
