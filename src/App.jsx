@@ -87,8 +87,40 @@ function App() {
 
     try {
       if (algorithm === "aes") {
-        // AES
-        setError("AES backend not yet implemented.");
+        // AES: encrypt/decrypt via backend endpoints
+        if (mode === "encrypt") {
+          if (!key.trim()) {
+            throw new Error("Key required for AES encryption");
+          }
+          const response = await fetch(`${API_BASE_URL}/aes/encrypt`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: input, key: key, size: keySize }),
+          });
+          const data = await response.json();
+          if (!response.ok || !data.success) {
+            throw new Error(data.error || "AES encryption failed");
+          }
+          setOutput(data.ciphertext);
+        } else if (mode === "decrypt") {
+          if (!key.trim()) {
+            throw new Error("Key required for AES decryption");
+          }
+          const response = await fetch(`${API_BASE_URL}/aes/decrypt`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ciphertext: input,
+              key: key,
+              size: keySize,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok || !data.success) {
+            throw new Error(data.error || "AES decryption failed");
+          }
+          setOutput(data.plaintext);
+        }
       } else if (algorithm === "rsa") {
         // RSA Encryption/Decryption
         if (mode === "encrypt") {
