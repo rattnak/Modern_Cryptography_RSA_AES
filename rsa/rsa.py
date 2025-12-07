@@ -251,33 +251,42 @@ def sign(message: str, key: Dict, size: int) -> Dict:
 def verify(message: str, signature: str, message_hash: str, key: Dict, size: int) -> bool:
     """
     Verify a digital signature using RSA public key.
-    
+
     Args:
         message: Original message
         signature: Signature as string (integer)
         message_hash: Expected hash as string (integer)
         key: Dictionary with 'e' and 'n' keys (public key)
         size: Key size in bits
-    
+
     Returns:
         True if signature is valid, False otherwise
-    
+
     Example:
         >>> keys = generate_keypair(512)
         >>> sig = sign("Hello", keys['private_key'], keys['size'])
         >>> verify("Hello", sig['signature'], sig['message_hash'], keys['public_key'], keys['size'])
         True
     """
-    # Convert strings to integers
-    signature_int = int(signature)
-    expected_hash = int(message_hash)
-    
-    # Verify: h = s^e mod n
-    e = key['e']
+    # Compute hash of the current message
+    hash_obj = hashlib.sha256(message.encode('utf-8'))
+    hash_bytes = hash_obj.digest()
+    computed_hash = int.from_bytes(hash_bytes, byteorder='big')
+
+    # Ensure hash fits within modulus (same truncation as in sign)
     n = key['n']
+    if computed_hash >= n:
+        computed_hash = computed_hash % n
+
+    # Convert signature string to integer
+    signature_int = int(signature)
+
+    # Recover the hash from the signature: h = s^e mod n
+    e = key['e']
     recovered_hash = pow(signature_int, e, n)
-    
-    return recovered_hash == expected_hash
+
+    # Signature is valid if the recovered hash matches the computed hash of the message
+    return recovered_hash == computed_hash
 
 
 # Example usage
